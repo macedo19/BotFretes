@@ -25,7 +25,7 @@ class  Filtro:
 class Scrapping:
 
     # PATH onde esta intalado seu driver do chrome
-    PATH_FOR_DRIVER = "C:/chromedriver/chromedriver-win64/chromedriv"
+    PATH_FOR_DRIVER = "C:/chromedriver/chromedriver-win64/chromedriv.exe"
 
     def __init__(self):
         options = webdriver.ChromeOptions()
@@ -63,46 +63,13 @@ class Scrapping:
     def getWb(self):
         return self.wb
     
-    #Executa a extração em Threads, para cada filtro sera uma thread
-    def iniciaThreads(self):
-
-        for name, url in Filtro.FILTRO.items():
-            self.processaFrete(name, url,  self.cookies)
-
-
-
-    def processaFrete(self, name, url,  cookies):
-        ws = self.wb.create_sheet(title=name)
-        ws.append(["DATA", "PRODUTO", "EMPRESA" ,"PREÇO", "CIDADE ORIGEM", "ESTADO ORIGEM", "CIDADE DESTINO", "ESTADO DESTINO", "VEICULO", "CARROCERIA", "TIPO DE CARGA", "RASTREAMENTO", "OBSERVACAO", "LINK"])
-
-        try:
-            self.extrairFretes(self.driver, ws, url, cookies)
-        finally:
-            self.driver.quit()
-
-    def extrairFretes(self, driver, ws, url, cookies):
-        self.driver.get(url)
-        #Total de páginas por filtro
-        total_paginas = driver.find_element(By.CSS_SELECTOR, ".sc-f24de481-0 .sc-f24de481-3 .sc-8b546cbe-0 fuel-typography[color='neutral-default']").find_element(By.TAG_NAME, 'p').text
-        total_itens_pagina = int(total_paginas.split()[1])
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=total_itens_pagina) as executor:
-            futures = [executor.submit(self.executaPorThread, self.driver ,ws, url, cookies, pagina) for  pagina in range(1, total_itens_pagina + 1)]
-            concurrent.futures.wait(futures)
-
 
     #Meotod que realiza a extração dos dados do site
-    def executaPorThread(self, driver,  ws, url, cookies, pagina):
-
-        options = webdriver.ChromeOptions()
-        options.add_experimental_option("detach", True)
-        driver = webdriver.Chrome(options=options)
+    def executaPorThread(self, driver,  ws, url, pagina):
 
         caminho = url + "/" + str(pagina)
         driver.get(caminho)
-        for cookie in cookies:
-            driver.add_cookie(cookie)
-        driver.refresh()
+
         sleep(2)
 
         div_dos_itens = driver.find_element(By.CSS_SELECTOR, ".sc-9769d6f0-0.ktWhJT")
@@ -155,9 +122,13 @@ class Scrapping:
                 observacao = driver.find_element(By.CSS_SELECTOR, ".detalhe-frete.frt-details .detalhe.barra-vert .detalhe_item_obs .frete-dados.frete-obs").text
                 empresa = driver.find_element(By.CSS_SELECTOR, ".titulo-geral-topo .total .cor-vermelho").text
                 
+
+
                 #Salva no arquivo
                 ws.append([data, produto, empresa ,preco, cidade_origem, estado_origem, cidade_destino, estado_destino, veiculo,
                         carroceria, tipo_de_carga, rastreamento, observacao, link])
+                
+
             except Exception as e:
                 print(f"Erro ao extrair detalhes do frete: {e}")
                 sleep(1)
@@ -166,6 +137,41 @@ class Scrapping:
             driver.switch_to.window(guia_original)
             sleep(2)
 
+
+    def extrairFretes(self, driver, ws, url):
+      
+        #Total de páginas por filtro
+        total_paginas = driver.find_element(By.CSS_SELECTOR, ".sc-f24de481-0 .sc-f24de481-3 .sc-8b546cbe-0 fuel-typography[color='neutral-default']").find_element(By.TAG_NAME, 'p').text
+        total_itens_pagina = int(total_paginas.split()[1])
+
+        for  pagina in range(1, total_itens_pagina + 1):
+            self.executaPorThread(driver ,ws, url, pagina) 
+
+    def processaFrete(self, name, url,  cookies):
+        ws = self.wb.create_sheet(title=name)
+        # ws.append(["DATA", "PRODUTO", "EMPRESA" ,"PREÇO", "CIDADE ORIGEM", "ESTADO ORIGEM", "CIDADE DESTINO", "ESTADO DESTINO", "VEICULO", "CARROCERIA", "TIPO DE CARGA", "RASTREAMENTO", "OBSERVACAO", "LINK", "DISTANCIA", "GASTO COMBUSTIVEL"])
+        ws.append(["DATA", "PRODUTO", "EMPRESA" ,"PREÇO", "CIDADE ORIGEM", "ESTADO ORIGEM", "CIDADE DESTINO", "ESTADO DESTINO", "VEICULO", "CARROCERIA", "TIPO DE CARGA", "RASTREAMENTO", "OBSERVACAO", "LINK"])
+
+        options = webdriver.ChromeOptions()
+        options.add_experimental_option("detach", True)
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        for cookie in cookies:
+            driver.add_cookie(cookie)
+        driver.refresh()
+
+        try:
+            self.extrairFretes(driver, ws, url)
+        finally:
+            driver.quit()
+
+
+    #Executa a extração em Threads, para cada filtro sera uma thread
+    def iniciaThreads(self):
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(Filtro.FILTRO.items())) as executor:
+            futures = [executor.submit(self.processaFrete, name, url, self.cookies) for name, url in Filtro.FILTRO.items()]
+            concurrent.futures.wait(futures)
 
     def finalizaScrapping(self):
         self.driver.quit()
